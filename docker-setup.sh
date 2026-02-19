@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Force the script to read your existing .env safely
+if [ -f ".env" ]; then
+  echo "==> Loading existing configuration from .env"
+  set -a            # Turn on auto-export
+  source .env       # Read the file
+  set +a            # Turn off auto-export
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 EXTRA_COMPOSE_FILE="$ROOT_DIR/docker-compose.extra.yml"
