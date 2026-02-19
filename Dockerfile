@@ -3,7 +3,7 @@ FROM node:22-bookworm
 # --- Start Brew Block ---
 # 1. Install Brew dependencies as root
 USER root
-RUN apt-get update && apt-get install -y build-essential procps file git curl sudo
+RUN apt-get update && apt-get install -y build-essential procps file git curl sudo cron
 
 # 2. Prep the directories so they are writable by the 'node' user
 RUN mkdir -p /home/linuxbrew/.linuxbrew && \
@@ -56,10 +56,10 @@ ENV NODE_ENV=production
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app
 
-# Security hardening: Run as non-root user
-# The node:22-bookworm image includes a 'node' user (uid 1000)
-# This reduces the attack surface by preventing container escape via root privileges
-USER node
+# Entrypoint starts cron (as root) and then drops to the 'node' user for the gateway.
+# We keep runtime as root only long enough to launch cron.
+USER root
+ENTRYPOINT ["/app/scripts/gateway-entrypoint.sh"]
 
 # Start gateway server with default config.
 # Binds to loopback (127.0.0.1) by default for security.
