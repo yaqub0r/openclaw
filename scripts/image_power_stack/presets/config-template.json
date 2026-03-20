@@ -1,0 +1,21 @@
+{
+  "deterministic_pipeline": "presets/ecommerce-cleanup.json",
+  "generative": {
+    "provider": "none",
+    "api_url": "http://127.0.0.1:7860",
+    "prompt": "high-end product retouch, clean shadows, premium finish",
+    "negative_prompt": "blurry, artifact, watermark, text",
+    "steps": 28,
+    "cfg_scale": 7,
+    "denoise": 0.4,
+    "sampler": "DPM++ 2M Karras"
+  },
+  "qa": {
+    "min_width": 1080,
+    "min_height": 1080,
+    "max_bytes": 6000000,
+    "min_blur_score": 8.0,
+    "compare_to_source": true,
+    "min_psnr": 10.0
+  }
+}
