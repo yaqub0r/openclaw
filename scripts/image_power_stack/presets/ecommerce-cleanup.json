@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "op": "resize_fit", "width": 2048, "height": 2048, "pad_color": "#ffffff" },
+    { "op": "levels", "brightness": 1.05, "contrast": 1.08, "color": 1.02, "sharpness": 1.12 },
+    { "op": "denoise_median", "size": 3 },
+    { "op": "unsharp", "radius": 1.8, "percent": 130, "threshold": 2 }
+  ]
+}

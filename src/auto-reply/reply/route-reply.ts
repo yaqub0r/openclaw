@@ -16,6 +16,36 @@ import type { OriginatingChannelType } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
 import { normalizeReplyPayload } from "./normalize-reply.js";
 
+const WHATSAPP_GROUP_JID_RE = /@g\.us$/i;
+const WHATSAPP_MEDIA_PLACEHOLDER_RE = /^(?:ok\W*)?(?:sent|uploaded|shared)\s+(?:a|an|the)?\s*(?:file|image|screenshot)\b/i;
+
+function normalizeTextForGuard(value: string): string {
+  return value.trim().replace(/^['"`]+|['"`]+$/g, "").toLowerCase();
+}
+
+function isWhatsAppGroupMediaPlaceholderText(params: {
+  channelId: string;
+  to: string;
+  text: string;
+  mediaUrls: string[];
+}): boolean {
+  if (params.channelId !== "whatsapp") {
+    return false;
+  }
+  if (!WHATSAPP_GROUP_JID_RE.test(params.to.trim())) {
+    return false;
+  }
+  if (params.mediaUrls.length > 0) {
+    return false;
+  }
+  const normalized = normalizeTextForGuard(params.text);
+  if (!normalized) {
+    return false;
+  }
+  return WHATSAPP_MEDIA_PLACEHOLDER_RE.test(normalized);
+}
+
+
 export type RouteReplyParams = {
   /** The reply payload to send. */
   payload: ReplyPayload;
@@ -89,11 +119,6 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
       : [];
   const replyToId = normalized.replyToId;
 
-  // Skip empty replies.
-  if (!text.trim() && mediaUrls.length === 0) {
-    return { ok: true };
-  }
-
   if (channel === INTERNAL_MESSAGE_CHANNEL) {
     return {
       ok: false,
@@ -105,6 +130,23 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
   if (!channelId) {
     return { ok: false, error: `Unknown channel: ${String(channel)}` };
   }
+
+  if (
+    isWhatsAppGroupMediaPlaceholderText({
+      channelId,
+      to,
+      text,
+      mediaUrls,
+    })
+  ) {
+    text =
+      "Media send was not completed. I did not attach a file yet — retrying with a real attachment now.";
+  }
+
+  // Skip empty replies.
+  if (!text.trim() && mediaUrls.length === 0) {
+    return { ok: true };
+  }
   if (abortSignal?.aborted) {
     return { ok: false, error: "Reply routing aborted" };
   }
@@ -113,6 +155,12 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
     replyToId ??
     (channelId === "slack" && threadId != null && threadId !== "" ? String(threadId) : undefined);
   const resolvedThreadId = channelId === "slack" ? null : (threadId ?? null);
+  const outgoingPayload: ReplyPayload = {
+    ...normalized,
+    text,
+    mediaUrls,
+    mediaUrl: mediaUrls[0],
+  };
 
   try {
     // Provider docking: this is an execution boundary (we're about to send).
@@ -123,7 +171,7 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
       channel: channelId,
       to,
       accountId: accountId ?? undefined,
-      payloads: [normalized],
+      payloads: [outgoingPayload],
       replyToId: resolvedReplyToId ?? null,
       threadId: resolvedThreadId,
       agentId: resolvedAgentId,

@@ -326,6 +326,36 @@ describe("routeReply", () => {
     );
   });
 
+  it("rewrites WhatsApp group media placeholder text when no media was attached", async () => {
+    mocks.sendMessageWhatsApp.mockClear();
+    await routeReply({
+      payload: { text: "sent a file" },
+      channel: "whatsapp",
+      to: "120363426043810543@g.us",
+      cfg: {} as never,
+    });
+    expect(mocks.sendMessageWhatsApp).toHaveBeenCalledWith(
+      "120363426043810543@g.us",
+      expect.stringContaining("Media send was not completed."),
+      expect.any(Object),
+    );
+  });
+
+  it("does not rewrite placeholder text when actual media is attached", async () => {
+    mocks.sendMessageWhatsApp.mockClear();
+    await routeReply({
+      payload: { text: "sent a file", mediaUrls: ["https://example.com/x.png"] },
+      channel: "whatsapp",
+      to: "120363426043810543@g.us",
+      cfg: {} as never,
+    });
+    expect(mocks.sendMessageWhatsApp).toHaveBeenCalledWith(
+      "120363426043810543@g.us",
+      "sent a file",
+      expect.objectContaining({ mediaUrl: "https://example.com/x.png" }),
+    );
+  });
+
   it("routes MS Teams via proactive sender", async () => {
     mocks.sendMessageMSTeams.mockClear();
     setActivePluginRegistry(
