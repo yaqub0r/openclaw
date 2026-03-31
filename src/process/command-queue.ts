@@ -47,6 +47,34 @@ type LaneState = {
   generation: number;
 };
 
+export type LaneTaskEvent = {
+  lane: string;
+  taskId: number;
+  enqueuedAt: number;
+  startedAt: number;
+  endedAt?: number;
+  status: "pending" | "running" | "done" | "error";
+  error?: unknown;
+};
+
+export type LaneHook = (event: LaneTaskEvent) => void;
+
+const laneHooks: LaneHook[] = [];
+
+export function addLaneHook(hook: LaneHook) {
+  laneHooks.push(hook);
+}
+
+function emitLaneEvent(event: LaneTaskEvent) {
+  for (const hook of laneHooks) {
+    try {
+      hook(event);
+    } catch (err) {
+      diag.error(`Error in lane hook: ${String(err)}`);
+    }
+  }
+}
+
 /**
  * Keep queue runtime state on globalThis so every bundled entry/chunk shares
  * the same lanes, counters, and draining flag in production builds.
@@ -126,6 +154,13 @@ function drainLane(lane: string) {
         const taskId = getQueueState().nextTaskId++;
         const taskGeneration = state.generation;
         state.activeTaskIds.add(taskId);
+        emitLaneEvent({
+          lane,
+          taskId,
+          enqueuedAt: entry.enqueuedAt,
+          startedAt: Date.now(),
+          status: "running",
+        });
         void (async () => {
           const startTime = Date.now();
           try {
@@ -135,6 +170,14 @@ function drainLane(lane: string) {
               diag.debug(
                 `lane task done: lane=${lane} durationMs=${Date.now() - startTime} active=${state.activeTaskIds.size} queued=${state.queue.length}`,
               );
+              emitLaneEvent({
+                lane,
+                taskId,
+                enqueuedAt: entry.enqueuedAt,
+                startedAt: startTime,
+                endedAt: Date.now(),
+                status: "done",
+              });
               pump();
             }
             entry.resolve(result);
@@ -146,6 +189,15 @@ function drainLane(lane: string) {
                 `lane task error: lane=${lane} durationMs=${Date.now() - startTime} error="${String(err)}"`,
               );
             }
+            emitLaneEvent({
+              lane,
+              taskId,
+              enqueuedAt: entry.enqueuedAt,
+              startedAt: startTime,
+              endedAt: Date.now(),
+              status: "error",
+              error: err,
+            });
             if (completedCurrentGeneration) {
               pump();
             }
@@ -192,15 +244,23 @@ export function enqueueCommandInLane<T>(
   const warnAfterMs = opts?.warnAfterMs ?? 2_000;
   const state = getLaneState(cleaned);
   return new Promise<T>((resolve, reject) => {
-    state.queue.push({
+    const entry: QueueEntry = {
       task: () => task(),
       resolve: (value) => resolve(value as T),
       reject,
       enqueuedAt: Date.now(),
       warnAfterMs,
       onWait: opts?.onWait,
-    });
+    };
+    state.queue.push(entry);
     logLaneEnqueue(cleaned, getLaneDepth(state));
+    emitLaneEvent({
+      lane: cleaned,
+      taskId: -1,
+      enqueuedAt: entry.enqueuedAt,
+      startedAt: 0,
+      status: "pending",
+    });
     drainLane(cleaned);
   });
 }

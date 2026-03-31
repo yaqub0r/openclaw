@@ -181,8 +181,39 @@ const windowsCiArgs = isWindowsCi ? ["--dangerouslyIgnoreUnhandledErrors"] : [];
 const silentArgs =
   process.env.OPENCLAW_TEST_SHOW_PASSED_LOGS === "1" ? [] : ["--silent=passed-only"];
 const rawPassthroughArgs = process.argv.slice(2);
-const passthroughArgs =
+const normalizedRawPassthroughArgs =
   rawPassthroughArgs[0] === "--" ? rawPassthroughArgs.slice(1) : rawPassthroughArgs;
+
+function normalizePassthroughArgs(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "-w" || arg === "--workers") {
+      const next = args[i + 1];
+      if (typeof next === "string" && /^\d+$/.test(next.trim())) {
+        out.push("--maxWorkers", next.trim());
+        i += 1;
+        continue;
+      }
+      continue;
+    }
+    if (typeof arg === "string" && arg.startsWith("-w=")) {
+      const value = arg.slice(3).trim();
+      if (value) {
+        out.push("--maxWorkers", value);
+      }
+      continue;
+    }
+    if (arg === "--runInBand") {
+      out.push("--maxWorkers", "1");
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+const passthroughArgs = normalizePassthroughArgs(normalizedRawPassthroughArgs);
 const parsePassthroughArgs = (args) => {
   const fileFilters = [];
   const optionArgs = [];
@@ -1193,16 +1224,20 @@ const runOnce = (entry, extraArgs = []) =>
     const maxWorkers = maxWorkersForRun(entry.name);
     const entryArgs = entry.args;
     const explicitEntryFilters = getExplicitEntryFilters(entryArgs);
-    const args = maxWorkers
-      ? [
-          ...entryArgs,
-          "--maxWorkers",
-          String(maxWorkers),
-          ...silentArgs,
-          ...windowsCiArgs,
-          ...extraArgs,
-        ]
-      : [...entryArgs, ...silentArgs, ...windowsCiArgs, ...extraArgs];
+    const hasMaxWorkersOverride = extraArgs.some((arg) =>
+      typeof arg === "string" ? arg === "--maxWorkers" || arg.startsWith("--maxWorkers=") : false,
+    );
+    const args =
+      maxWorkers && !hasMaxWorkersOverride
+        ? [
+            ...entryArgs,
+            "--maxWorkers",
+            String(maxWorkers),
+            ...silentArgs,
+            ...windowsCiArgs,
+            ...extraArgs,
+          ]
+        : [...entryArgs, ...silentArgs, ...windowsCiArgs, ...extraArgs];
     const shardLabel = getShardLabel(extraArgs);
     const artifactStem = [
       sanitizeArtifactName(entry.name),
