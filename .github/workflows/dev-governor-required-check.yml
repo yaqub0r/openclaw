@@ -1,0 +1,42 @@
+name: dev-governor-required-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Task ID (e.g. DEV-20260401-governor-mvp-enforcement)"
+        required: true
+        type: string
+      attestation_path:
+        description: "Path to attestation.json in repo workspace"
+        required: true
+        type: string
+      require_overall_pass:
+        description: "Require gates.overall=pass"
+        required: false
+        type: boolean
+        default: true
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-attestation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate governor attestation (PR mode)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "No default attestation artifact is available in PR context by design."
+          echo "Use workflow_dispatch with task_id + attestation_path (or wire this into your build pipeline artifact fetch)."
+      - name: Validate governor attestation (manual)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          EXTRA=""
+          if [ "${{ inputs.require_overall_pass }}" = "true" ]; then
+            EXTRA="--require-overall-pass"
+          fi
+          python3 scripts/dev/dev_governor_required_check.py \
+            --task-id "${{ inputs.task_id }}" \
+            --attestation "${{ inputs.attestation_path }}" \
+            $EXTRA
